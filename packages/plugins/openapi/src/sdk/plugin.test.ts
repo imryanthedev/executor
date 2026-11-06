@@ -326,7 +326,7 @@ const oauthTemplate: AuthenticationInput = {
   scopes: ["read"],
 };
 
-const serveOAuthDiscoverableOpenApiSpec = () =>
+const serveOAuthDiscoverableOpenApiSpec = (options?: { readonly resourcePath?: string }) =>
   Effect.gen(function* () {
     let baseUrl = "";
     const server = yield* serveTestHttpApp((request) => {
@@ -355,7 +355,7 @@ const serveOAuthDiscoverableOpenApiSpec = () =>
       if (request.url.includes("/.well-known/oauth-protected-resource")) {
         return Effect.succeed(
           HttpServerResponse.jsonUnsafe({
-            resource: baseUrl,
+            resource: `${baseUrl}${options?.resourcePath ?? ""}`,
             authorization_servers: [baseUrl],
             scopes_supported: ["project:read"],
           }),
@@ -450,6 +450,22 @@ describe("OpenAPI Plugin", () => {
             supportsClientIdMetadataDocument: true,
           },
         ]);
+      }),
+    ),
+  );
+
+  it.effect("previewSpec ignores OAuth metadata published for a different resource", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const server = yield* serveOAuthDiscoverableOpenApiSpec({ resourcePath: "/mcp" });
+        const executor = yield* createExecutor(
+          makeTestConfig({ plugins: testPlugins(server.httpClientLayer) }),
+        );
+
+        const preview = yield* executor.openapi.previewSpec(server.url("/api/schema/"));
+
+        expect(preview.headerPresets.map((preset) => preset.label)).toContain("Bearer Token");
+        expect(preview.oauth2Presets).toHaveLength(0);
       }),
     ),
   );
