@@ -476,6 +476,17 @@ const addProbeCandidate = (candidates: string[], value: string | undefined): voi
   if (!candidates.includes(origin)) candidates.push(origin);
 };
 
+// Protected-resource metadata describes only URLs under its `resource`
+// (RFC 9728 §3.3). A host can publish metadata for a sibling endpoint, such as
+// an MCP server at `/v1/mcp`, whose tokens do not apply to the API itself.
+const resourceCoversUrl = (resource: string, url: string): boolean => {
+  const resourceUrl = maybeUrl(resource);
+  const target = maybeUrl(url);
+  if (!resourceUrl || !target || resourceUrl.origin !== target.origin) return false;
+  const base = resourceUrl.pathname.replace(/\/+$/, "");
+  return base === "" || target.pathname === base || target.pathname.startsWith(`${base}/`);
+};
+
 const oauthProbeCandidates = (
   preview: SpecPreview,
   specUrl: string | undefined,
@@ -778,6 +789,9 @@ export const openApiPlugin = definePlugin<
               Effect.catch(() => Effect.succeed({ ok: false as const, result: null })),
             );
             if (!oauth.ok) continue;
+            if (oauth.result.resource && !resourceCoversUrl(oauth.result.resource, candidate)) {
+              continue;
+            }
 
             const doc = yield* parse(input.specText);
             const declaredScopes = collectDeclaredSecurityScopes(
